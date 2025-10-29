@@ -21,8 +21,12 @@ type PlayerState struct {
 	Deck        []Card
 	PacksOpened int
 	WsConn      *websocket.Conn // Conexão WebSocket para o cliente local
-	// Adicionar campo para identificar o servidor ao qual o jogador está conectado
-	ServerID string
+	ServerID    string
+
+	// --- NOVOS CAMPOS PARA GERENCIAMENTO DE ESTADO ---
+	mu          sync.Mutex      // Protege o 'State' e 'CurrentGame'
+	State       string          // "Menu", "InGame", "Searching"
+	CurrentGame *GameSession    // Referência para o jogo atual (se 'State' == "InGame")
 }
 
 // GameSession representa o estado de uma partida 1v1 em andamento.
@@ -32,6 +36,10 @@ type GameSession struct {
 	Player1Card *Card
 	Player2Card *Card
 	mu          sync.Mutex // Mutex para proteger o acesso concorrente aos dados da sessão.
+	
+	// --- NOVOS CAMPOS PARA ARMAZENAR MÃO ---
+	Player1Hand [2]Card
+	Player2Hand [2]Card
 }
 
 // Server é a estrutura principal que gerencia o estado e as conexões do servidor.
@@ -41,6 +49,10 @@ type Server struct {
 	Players     map[string]*PlayerState // Mapa de jogadores conectados localmente (key: PlayerName)
 	PlayerMutex *sync.Mutex
 	ServerID    string // Identificador único do servidor
+
+	// --- NOVOS CAMPOS PARA GERENCIAR PARTIDAS ---
+	ActiveGames map[string]*GameSession // Mapa de partidas ativas (key: PlayerName do P1)
+	GamesMutex  sync.Mutex              // Protege 'ActiveGames'
 }
 
 // Request/Response DTOs para comunicação Server-Server (REST)

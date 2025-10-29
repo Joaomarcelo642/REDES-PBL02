@@ -61,6 +61,9 @@ func main() {
 		Players:     make(map[string]*PlayerState),
 		PlayerMutex: &sync.Mutex{},
 		ServerID:    serverID,
+		// --- INICIALIZA NOVOS CAMPOS ---
+		ActiveGames: make(map[string]*GameSession),
+		GamesMutex:  sync.Mutex{},
 	}
 
 	// 4. Inicializa o estoque de cartas (apenas se não existir)

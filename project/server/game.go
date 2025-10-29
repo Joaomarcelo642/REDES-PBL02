@@ -4,12 +4,57 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"strconv" // Importa strconv
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-// selectRandomCards pega uma cópia do deck do jogador, embaralha e retorna o número de cartas solicitado.
+// --- NOVA FUNÇÃO ---
+// handleGameMove processa a jogada de um jogador ("1" ou "2")
+func (s *Server) handleGameMove(player *PlayerState, session *GameSession, command string) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	// 1. Verifica se a jogada já foi feita
+	isP1 := (player.Name == session.Player1.Name)
+	if (isP1 && session.Player1Card != nil) || (!isP1 && session.Player2Card != nil) {
+		s.sendWebSocketMessage(player, "Você já fez sua jogada.")
+		return
+	}
+
+	// 2. Valida o comando e seleciona a carta
+	choice, err := strconv.Atoi(command)
+	if err != nil || (choice != 1 && choice != 2) {
+		s.sendWebSocketMessage(player, "Comando inválido. Jogue '1' ou '2'.")
+		return
+	}
+
+	// 3. Define a carta jogada na sessão
+	if isP1 {
+		chosenCard := session.Player1Hand[choice-1]
+		session.Player1Card = &chosenCard
+		log.Printf("Jogador %s (P1) jogou %s.", player.Name, chosenCard.Name)
+	} else {
+		// Garante que P2 exista antes de tentar acessá-lo
+		if session.Player2 == nil || player.Name != session.Player2.Name {
+			log.Printf("Erro: Jogador %s não é P2 nesta sessão.", player.Name)
+			return
+		}
+		chosenCard := session.Player2Hand[choice-1]
+		session.Player2Card = &chosenCard
+		log.Printf("Jogador %s (P2) jogou %s.", player.Name, chosenCard.Name)
+	}
+
+	// 4. Se ambos jogaram, determina o vencedor
+	if session.Player1Card != nil && session.Player2Card != nil {
+		// Chama determineWinner em uma nova goroutine para liberar o lock da sessão
+		// e permitir que determineWinner gerencie seus próprios locks (jogador, etc.)
+		go s.determineWinner(session)
+	}
+}
+
+// selectRandomCards (Função inalterada)
 func selectRandomCards(deck []Card, count int) []Card {
 	if len(deck) < count {
 		return nil
@@ -24,9 +69,15 @@ func selectRandomCards(deck []Card, count int) []Card {
 }
 
 // determineWinner compara as cartas jogadas e envia o resultado para ambos os jogadores.
-func determineWinner(session *GameSession) {
+// --- ESTA FUNÇÃO FOI MODIFICADA ---
+func (s *Server) determineWinner(session *GameSession) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
+
+	// Prevenção contra chamada dupla (embora handleGameMove deva prevenir)
+	if session.Player1.State != "InGame" {
+		return
+	}
 
 	p1Card := session.Player1Card
 	p2Card := session.Player2Card
@@ -82,4 +133,29 @@ func determineWinner(session *GameSession) {
 			}
 		}
 	}
+
+	// --- LIMPEZA DE ESTADO ---
+	// Reseta o estado dos jogadores para "Menu"
+	if session.Player1 != nil {
+		session.Player1.mu.Lock()
+		session.Player1.State = "Menu"
+		session.Player1.CurrentGame = nil
+		session.Player1.mu.Unlock()
+	}
+	if session.Player2 != nil {
+		session.Player2.mu.Lock()
+		session.Player2.State = "Menu"
+		session.Player2.CurrentGame = nil
+		session.Player2.mu.Unlock()
+	}
+
+	// Remove a sessão do mapa de jogos ativos
+	s.GamesMutex.Lock()
+	if session.Player1 != nil {
+		delete(s.ActiveGames, session.Player1.Name)
+	} else if session.Player2 != nil {
+		// Caso P1 tenha desconectado, P2 pode ser a chave (embora a lógica atual use P1)
+		delete(s.ActiveGames, session.Player2.Name)
+	}
+	s.GamesMutex.Unlock()
 }

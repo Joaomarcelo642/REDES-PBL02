@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync" // Importa o sync
 
 	"github.com/gorilla/websocket"
 )
@@ -49,6 +50,10 @@ func (s *Server) handleWebSocketConnection(w http.ResponseWriter, r *http.Reques
 		PacksOpened: 0,
 		WsConn:      conn,
 		ServerID:    s.ServerID,
+		// --- INICIALIZA ESTADO ---
+		mu:          sync.Mutex{},
+		State:       "Menu", // Estado inicial
+		CurrentGame: nil,
 	}
 
 	// Adiciona o jogador ao mapa de jogadores locais
@@ -69,6 +74,7 @@ func (s *Server) handleWebSocketConnection(w http.ResponseWriter, r *http.Reques
 }
 
 // listenClientCommands é o loop principal que processa os comandos do cliente.
+// --- ESTA FUNÇÃO FOI MODIFICADA ---
 func (s *Server) listenClientCommands(player *PlayerState) {
 	defer func() {
 		// Limpeza ao desconectar
@@ -89,17 +95,29 @@ func (s *Server) listenClientCommands(player *PlayerState) {
 		command := strings.TrimSpace(string(message))
 		log.Printf("Comando recebido de %s: %s", player.Name, command)
 
-		// Processa o comando recebido.
-		switch command {
-		case "FIND_MATCH":
-			// Adiciona o jogador à fila de matchmaking distribuída
-			s.addToMatchmakingQueue(player)
-		case "OPEN_PACK":
-			s.openCardPack(player, false)
-		case "VIEW_DECK":
-			s.viewDeck(player)
-		default:
-			s.sendWebSocketMessage(player, "Comando inválido.")
+		// --- LÓGICA DE ROTEAMENTO BASEADA EM ESTADO ---
+		player.mu.Lock()
+		state := player.State
+		game := player.CurrentGame
+		player.mu.Unlock()
+
+		if state == "InGame" && game != nil {
+			// Se o jogador está em jogo, encaminha o comando para a lógica do jogo
+			s.handleGameMove(player, game, command)
+		} else {
+			// Se não, processa como um comando de menu
+			switch command {
+			case "FIND_MATCH":
+				// Adiciona o jogador à fila de matchmaking distribuída
+				s.addToMatchmakingQueue(player)
+			case "OPEN_PACK":
+				s.openCardPack(player, false)
+			case "VIEW_DECK":
+				s.viewDeck(player)
+			default:
+				// Comandos como "1" ou "2" são inválidos no estado "Menu"
+				s.sendWebSocketMessage(player, "Comando inválido.")
+			}
 		}
 	}
 }
