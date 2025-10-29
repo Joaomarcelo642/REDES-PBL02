@@ -10,37 +10,51 @@ import (
 
 // Card representa uma única carta do jogo, com nome e força.
 type Card struct {
-	Name  string `json:"name"`
-	Forca int    `json:"forca"`
+	Name  string `json:"name"`  // <-- ADICIONAR TAG
+	Forca int    `json:"forca"` // <-- ADICIONAR TAG
 }
 
-// PlayerState representa o estado de um jogador, agora armazenado no servidor.
-// A conexão de rede (websocket) é gerenciada pelo servidor local.
+// PlayerState (inalterado)
 type PlayerState struct {
 	Name        string
 	Deck        []Card
 	PacksOpened int
-	WsConn      *websocket.Conn // Conexão WebSocket para o cliente local
-	// Adicionar campo para identificar o servidor ao qual o jogador está conectado
-	ServerID string
+	WsConn      *websocket.Conn
+	ServerID    string
+
+	mu          sync.Mutex
+	State       string
+	CurrentGame *GameSession
 }
 
 // GameSession representa o estado de uma partida 1v1 em andamento.
 type GameSession struct {
-	Player1     *PlayerState
-	Player2     *PlayerState
+	Player1 *PlayerState // Pode ser local ou "fantasma"
+	Player2 *PlayerState // Pode ser local ou "fantasma"
+
+	// --- ESTES CAMPOS SÓ SERÃO PREENCHIDOS NO P1-SERVER, ANTES DE CHAMAR determineWinner ---
 	Player1Card *Card
 	Player2Card *Card
-	mu          sync.Mutex // Mutex para proteger o acesso concorrente aos dados da sessão.
+	// ---------------------------------------------------------------------------------
+
+	mu          sync.Mutex
+	Player1Hand [2]Card // Mão do P1 (só existe no P1-Server)
+	Player2Hand [2]Card // Mão do P2 (só existe no P2-Server)
+
+	// --- NOVOS CAMPOS ---
+	Server1ID string // ID do servidor do P1
+	Server2ID string // ID do servidor do P2
 }
 
-// Server é a estrutura principal que gerencia o estado e as conexões do servidor.
+// Server (inalterado)
 type Server struct {
 	RedisClient *redis.Client
 	Router      *chi.Mux
-	Players     map[string]*PlayerState // Mapa de jogadores conectados localmente (key: PlayerName)
+	Players     map[string]*PlayerState
 	PlayerMutex *sync.Mutex
-	ServerID    string // Identificador único do servidor
+	ServerID    string
+	ActiveGames map[string]*GameSession
+	GamesMutex  sync.Mutex
 }
 
 // Request/Response DTOs para comunicação Server-Server (REST)

@@ -61,6 +61,9 @@ func main() {
 		Players:     make(map[string]*PlayerState),
 		PlayerMutex: &sync.Mutex{},
 		ServerID:    serverID,
+		// --- INICIALIZA NOVOS CAMPOS ---
+		ActiveGames: make(map[string]*GameSession),
+		GamesMutex:  sync.Mutex{},
 	}
 
 	// 4. Inicializa o estoque de cartas (apenas se não existir)
@@ -142,6 +145,7 @@ func (s *Server) handleTakeCardPack(w http.ResponseWriter, r *http.Request) {
 // handleMatchNotification implementa o endpoint REST para que outros servidores notifiquem
 // este servidor sobre um pareamento de partida.
 // Item 6: Pareamento em Ambiente Distribuído
+// handleMatchNotification implementa o endpoint REST...
 func (s *Server) handleMatchNotification(w http.ResponseWriter, r *http.Request) {
 	var req MatchNotificationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -149,20 +153,21 @@ func (s *Server) handleMatchNotification(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Verifica se o jogador local é o Player1 ou Player2 da notificação
-	isPlayer1Local := req.Server1ID == s.ServerID
-	isPlayer2Local := req.Server2ID == s.ServerID
+	// --- LÓGICA CORRIGIDA ---
+	// O matchmaker decide quem é P1 (Player1Name) e P2 (Player2Name).
+	// Ambos os servidores devem usar essa ordem.
+	isPlayerLocal := req.Server1ID == s.ServerID || req.Server2ID == s.ServerID
 
-	if isPlayer1Local {
-		s.startLocalGame(req.Player1Name, req.Player2Name)
-	} else if isPlayer2Local {
-		s.startLocalGame(req.Player2Name, req.Player1Name)
+	if isPlayerLocal {
+		// Passa P1, P2 e os IDs de ambos os servidores.
+		// startLocalGame vai descobrir qual deles é o local.
+		s.startLocalGame(req.Player1Name, req.Player2Name, req.Server1ID, req.Server2ID)
 	} else {
-		// Não deveria acontecer se a lógica do matchmaker estiver correta.
 		log.Printf("Notificação de partida recebida, mas nenhum jogador é local: %v", req)
 		http.Error(w, "Nenhum jogador local envolvido.", http.StatusConflict)
 		return
 	}
+	// --- FIM DA CORREÇÃO ---
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
