@@ -52,4 +52,4 @@ docker-compose -f docker-compose.yml down
 
 echo "--- TESTES CONCLUÍDOS ---"
 echo "Verifique o log do 'server-1' e 'server-2' para análise detalhada."
-echo "O teste de concorrência é considerado bem-sucedido se o número de pacotes abertos for próximo a 300 (100 bots * 3 pacotes)."
+echo "O teste de concorrência é considerado bem-sucedido se o número de pacotes abertos for próximo a 30 (10 bots * 3 pacotes)."

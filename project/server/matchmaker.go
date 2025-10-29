@@ -243,8 +243,7 @@ func (s *Server) callRemoteMatchNotification(remoteServerID string, req MatchNot
 	return nil // Sucesso
 }
 
-// startLocalGame (VERSÃO DISTRIBUÍDA)
-// Esta é a função correta da sua mensagem anterior.
+// startLocalGame (VERSÃO DISTRIBUÍDA CORRIGIDA PARA LOCAL-VS-LOCAL)
 // Inicia a sessão de jogo. P1, P2 e seus IDs de servidor são fornecidos pelo matchmaker.
 func (s *Server) startLocalGame(player1Name, player2Name, server1ID, server2ID string) {
 	// 1. Pega o jogador local do mapa, identificando se é P1 ou P2
@@ -252,15 +251,34 @@ func (s *Server) startLocalGame(player1Name, player2Name, server1ID, server2ID s
 	var localPlayer *PlayerState
 	var isP1 bool
 
+	// --- LÓGICA CORRIGIDA ---
+	// Tentamos encontrar P1. Se ele estiver local E AINDA não estiver em jogo...
 	if p, ok := s.Players[player1Name]; ok {
-		localPlayer = p
-		isP1 = true
-	} else if p, ok := s.Players[player2Name]; ok {
-		localPlayer = p
-		isP1 = false
-	} else {
+		p.mu.Lock()
+		if p.State != "InGame" { // Se P1 não estiver em jogo
+			localPlayer = p
+			isP1 = true
+		}
+		p.mu.Unlock()
+	}
+
+	// Se P1 não foi encontrado (ou já estava em jogo), tentamos P2
+	if localPlayer == nil {
+		if p, ok := s.Players[player2Name]; ok {
+			p.mu.Lock()
+			if p.State != "InGame" { // Se P2 não estiver em jogo
+				localPlayer = p
+				isP1 = false
+			}
+			p.mu.Unlock()
+		}
+	}
+	// --- FIM DA LÓGICA CORRIGIDA ---
+
+	if localPlayer == nil {
 		s.PlayerMutex.Unlock()
-		log.Printf("Erro: startLocalGame (P1: %s, P2: %s) chamado, mas nenhum jogador é local.", player1Name, player2Name)
+		// Se ambos já estão InGame (na segunda chamada local-vs-local), isso é normal.
+		log.Printf("startLocalGame (P1: %s, P2: %s) chamado, mas o jogador local já está 'InGame' (ou não é local).", player1Name, player2Name)
 		return
 	}
 	s.PlayerMutex.Unlock()
@@ -304,8 +322,11 @@ func (s *Server) startLocalGame(player1Name, player2Name, server1ID, server2ID s
 		log.Printf("Iniciando partida (P2): %s vs %s.", localPlayer.Name, player1Name)
 		session.Player2 = localPlayer
 		session.Player2Hand = hand
-		// Cria um "fantasma" para o P1
-		session.Player1 = &PlayerState{Name: player1Name, ServerID: server1ID}
+		// Cria um "fantasma" para o P1 (se P1 for remoto)
+		// Se P1 for local, ele já foi definido na primeira chamada.
+		if session.Player1 == nil {
+			session.Player1 = &PlayerState{Name: player1Name, ServerID: server1ID}
+		}
 	}
 	session.mu.Unlock()
 	s.GamesMutex.Unlock()
