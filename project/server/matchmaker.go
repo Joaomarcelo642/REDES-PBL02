@@ -8,7 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"sync" // Importa o sync
+	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -105,7 +105,8 @@ func (s *Server) matchmakingTimeout(player *PlayerState, timeout time.Duration) 
 	}
 }
 
-// distributedMatchmaker (Função inalterada)
+// distributedMatchmaker é a goroutine que roda em cada servidor para tentar parear jogadores.
+// Item 6: Pareamento em Ambiente Distribuído
 func (s *Server) distributedMatchmaker() {
 	ctx := context.Background()
 	ticker := time.NewTicker(2 * time.Second)
@@ -182,14 +183,14 @@ func (s *Server) distributedMatchmaker() {
 	}
 }
 
-// notifyMatchStart (Função inalterada)
+// notifyMatchStart coordena o início da partida entre os servidores.
+// --- ESTA FUNÇÃO FOI MODIFICADA (TOLERÂNCIA A FALHAS) ---
 func (s *Server) notifyMatchStart(p1Ticket, p2Ticket MatchmakingTicket) {
 	log.Printf("Iniciando notificação de partida para %s vs %s", p1Ticket.PlayerName, p2Ticket.PlayerName)
 
 	// 1. Caso Local: Ambos os jogadores no mesmo servidor (o que encontrou a partida)
 	if p1Ticket.ServerID == s.ServerID && p2Ticket.ServerID == s.ServerID {
 		s.startLocalGame(p1Ticket.PlayerName, p2Ticket.PlayerName)
-		// Adicionado: A função é chamada duas vezes no caso local
 		s.startLocalGame(p2Ticket.PlayerName, p1Ticket.PlayerName)
 		return
 	}
@@ -204,17 +205,33 @@ func (s *Server) notifyMatchStart(p1Ticket, p2Ticket MatchmakingTicket) {
 		Server2ID:   p2Ticket.ServerID,
 	}
 
-	// Notifica o servidor do Jogador 1
+	// Notifica o servidor do Jogador 1 (se for remoto)
 	if p1Ticket.ServerID != s.ServerID {
-		s.callRemoteMatchNotification(p1Ticket.ServerID, req)
+		err := s.callRemoteMatchNotification(p1Ticket.ServerID, req)
+		if err != nil {
+			// --- CORREÇÃO DE FALHA ---
+			// Se a notificação falhar, aborta a partida.
+			log.Printf("FALHA AO NOTIFICAR P1 (%s) no servidor %s. Partida abortada. Erro: %v", p1Ticket.PlayerName, p1Ticket.ServerID, err)
+			// TODO: Idealmente, deveria devolver os jogadores à fila.
+			// Por enquanto, apenas abortamos o início do jogo.
+			return
+		}
 	}
 
-	// Notifica o servidor do Jogador 2
+	// Notifica o servidor do Jogador 2 (se for remoto)
 	if p2Ticket.ServerID != s.ServerID {
-		s.callRemoteMatchNotification(p2Ticket.ServerID, req)
+		err := s.callRemoteMatchNotification(p2Ticket.ServerID, req)
+		if err != nil {
+			// --- CORREÇÃO DE FALHA ---
+			log.Printf("FALHA AO NOTIFICAR P2 (%s) no servidor %s. Partida abortada. Erro: %v", p2Ticket.PlayerName, p2Ticket.ServerID, err)
+			// TODO: Idealmente, deveria devolver P1 (se notificado) e P2 à fila.
+			return
+		}
 	}
 
-	// Se o orquestrador tiver jogadores locais, inicia a partida para eles.
+	// SOMENTE SE AS NOTIFICAÇÕES REMOTAS FOREM BEM SUCEDIDAS,
+	// iniciamos o jogo para os jogadores locais.
+
 	if p1Ticket.ServerID == s.ServerID {
 		s.startLocalGame(p1Ticket.PlayerName, p2Ticket.PlayerName)
 	}
@@ -225,31 +242,35 @@ func (s *Server) notifyMatchStart(p1Ticket, p2Ticket MatchmakingTicket) {
 	}
 }
 
-// callRemoteMatchNotification (Função inalterada)
-func (s *Server) callRemoteMatchNotification(remoteServerID string, req MatchNotificationRequest) {
+// callRemoteMatchNotification envia a notificação de partida para um servidor remoto via REST.
+// --- ESTA FUNÇÃO FOI MODIFICADA (URL E RETORNO DE ERRO) ---
+func (s *Server) callRemoteMatchNotification(remoteServerID string, req MatchNotificationRequest) error {
 	// O endereço do servidor remoto é resolvido pelo nome do serviço Docker (server-X)
-	// Como o barema pede emulação realista, o nome do serviço será "server-X"
-	// No docker-compose, teremos múltiplos serviços "server" (server1, server2, etc.)
+	// ...
 	// Por simplicidade, assumimos que o nome do serviço é o ServerID (ex: server-1)
-	url := fmt.Sprintf("http://%s:%s/api/v1/match/notify", remoteServerID, restPort)
+
+	// --- CORREÇÃO 1: Mudar de %s:%s para %s%s
+	// Isso combina "server-1" (remoteServerID) com ":8081" (restPort)
+	// para formar "http://server-1:8081/..."
+	url := fmt.Sprintf("http://%s%s/api/v1/match/notify", remoteServerID, restPort)
 
 	jsonData, _ := json.Marshal(req)
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		log.Printf("Erro ao notificar servidor %s via REST: %v", remoteServerID, err)
-		// TODO: Lógica de tolerância a falhas (Item 7) - o que fazer se o servidor falhar?
-		// Por enquanto, apenas logamos o erro.
-		return
+		return err // --- CORREÇÃO 2: Retorna o erro de HTTP
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("Servidor %s retornou status %d ao notificar partida.", remoteServerID, resp.StatusCode)
+		return fmt.Errorf("servidor remoto retornou status %d", resp.StatusCode) // --- CORREÇÃO 3: Retorna o erro de status
 	}
+
+	return nil // Sucesso
 }
 
 // startLocalGame inicia a sessão de jogo entre dois jogadores (um pode ser remoto).
-// --- ESTA FUNÇÃO FOI REESCRITA ---
 func (s *Server) startLocalGame(localPlayerName, opponentPlayerName string) {
 	// 1. Pega o jogador local do mapa
 	s.PlayerMutex.Lock()
