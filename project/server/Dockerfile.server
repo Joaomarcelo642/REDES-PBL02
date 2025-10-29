@@ -1,0 +1,24 @@
+# Dockerfile para o Servidor de Jogo Distribuído
+# Item 9: Emprego do Docker e Emulação Realista
+
+FROM golang:1.21-alpine
+
+WORKDIR /app
+
+# Pré-instalação de dependências para evitar reinstalação a cada mudança de código
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copia o código-fonte da aplicação
+COPY *.go ./
+
+# Compila o executável do servidor
+RUN go build -o /server
+
+# A porta 8080 é para WebSocket (Client-Server)
+# A porta 8081 é para a API REST (Server-Server)
+EXPOSE 8080 8081
+
+# Comando de execução
+CMD [ "/server" ]
+

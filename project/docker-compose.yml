@@ -1,0 +1,64 @@
+services:
+  redis:
+    image: redis:6.2-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+
+  # Servidor 1 (Servidor principal)
+  server-1:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.server
+    container_name: server-1
+    ports:
+      - "8080:8080" # Porta WebSocket para clientes
+      - "8081:8081" # Porta REST para comunicação Server-Server
+    environment:
+      - REDIS_ADDR=redis:6379
+      - SERVER_ID=server-1
+    depends_on:
+      - redis
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Servidor 2 (Emulação de ambiente distribuído)
+  server-2:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.server
+    container_name: server-2
+    ports:
+      - "8082:8080" # Mapeia para uma porta diferente no host
+      - "8083:8081" # Mapeia para uma porta diferente no host
+    environment:
+      - REDIS_ADDR=redis:6379
+      - SERVER_ID=server-2
+    depends_on:
+      - redis
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Bots de Teste (Clientes)
+  bots:
+    build:
+      context: ./client
+      dockerfile: Dockerfile.client
+    depends_on:
+      - server-1
+      - server-2
+    # O comando agora aponta para o nome do serviço do servidor no Docker
+    # O cliente deve ser configurado para se conectar a um dos servidores (server-1, porta 8080).
+    command: ["tail", "-f", "/dev/null"] # Mantém o container rodando para testes manuais ou via script
+    networks:
+      - app-network
+    restart: on-failure
+
+networks:
+  app-network:
+    driver: bridge
+
