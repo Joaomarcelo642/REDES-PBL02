@@ -183,6 +183,7 @@ func handleServerConnection(playerName string, serverWsUrl string) {
 			choice := strings.TrimSpace(input)
 
 			// Envia comandos para o servidor com base na escolha do usuário.
+			// --- SWITCH MODIFICADO ---
 			switch choice {
 			case "1":
 				stateMutex.Lock()
@@ -194,25 +195,44 @@ func handleServerConnection(playerName string, serverWsUrl string) {
 				conn.WriteMessage(websocket.TextMessage, []byte("OPEN_PACK"))
 			case "3":
 				conn.WriteMessage(websocket.TextMessage, []byte("VIEW_DECK"))
-			case "4":
+			case "4": // <-- NOVO CASE
+				fmt.Print("Digite o número da carta no seu deck para trocar (começando em 1). (Use '3. Ver Meu Deck' para ver os números): ")
+				input, _ := reader.ReadString('\n')
+				cardIndexStr := strings.TrimSpace(input)
+				// Validação simples (servidor fará a validação completa)
+				if _, err := strconv.Atoi(cardIndexStr); err == nil {
+					if cardIndexStr != "" {
+						conn.WriteMessage(websocket.TextMessage, []byte("TRADE_CARD "+cardIndexStr))
+					} else {
+						fmt.Println("Entrada inválida.")
+					}
+				} else {
+					fmt.Println("Entrada inválida. Deve ser um número.")
+				}
+			case "5": // <-- CASE ANTIGO "4"
 				return // Encerra a função e o programa.
 			default:
 				fmt.Println("Opção inválida. Tente novamente.")
 			}
+			// --- FIM DA MODIFICAÇÃO ---
 		}
 		time.Sleep(100 * time.Millisecond) // Pausa para evitar uso excessivo de CPU.
 	}
 }
 
 // showMenu apenas exibe as opções de ação para o jogador.
+// --- FUNÇÃO MODIFICADA ---
 func showMenu() {
 	fmt.Println("\n--- MENU PRINCIPAL ---")
 	fmt.Println("1. Procurar Partida")
 	fmt.Println("2. Abrir Pacote de Cartas")
 	fmt.Println("3. Ver Meu Deck")
-	fmt.Println("4. Sair")
+	fmt.Println("4. Trocar Carta") // <-- NOVO
+	fmt.Println("5. Sair")         // <-- MUDOU
 	fmt.Print("> ")
 }
+
+// --- FIM DA MODIFICAÇÃO ---
 
 // listenServerMessages roda em background para processar todas as mensagens recebidas do servidor.
 func listenServerMessages(conn *websocket.Conn, playerName string, cancelGame context.CancelFunc) {
