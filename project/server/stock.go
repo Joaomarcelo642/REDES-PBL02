@@ -13,11 +13,9 @@ import (
 
 const (
 	stockKey = "global_card_stock"
-	// A constante lockKey (lock:stock_access) foi removida,
-	// pois não é mais necessária com a abordagem atômica.
 )
 
-// --- NOVO SCRIPT LUA ---
+// SCRIPT LUA
 // Este script é executado atomicamente pelo Redis para cada chamada.
 // Ele verifica se há cartas suficientes (3) e, se houver, as remove da lista (LPOP)
 // e as retorna. Tudo em uma única operação indivisível.
@@ -44,7 +42,6 @@ var atomicOpenPackScript = redis.NewScript(`
 `)
 
 // initializeDistributedStock cria o estoque de cartas no Redis.
-// (Esta função permanece inalterada)
 func (s *Server) initializeDistributedStock() {
 	ctx := context.Background()
 	// Verifica se o estoque já existe no Redis.
@@ -58,7 +55,7 @@ func (s *Server) initializeDistributedStock() {
 		return
 	}
 
-	// 1. Definição das cartas base (mantida a original)
+	// 1. Definição das cartas base
 	baseCards := []Card{
 		{Name: "Camponês Armado", Forca: 1}, {Name: "Batedor Anão", Forca: 1}, {Name: "Arqueiro Elfo", Forca: 1},
 		{Name: "Ghoul", Forca: 1}, {Name: "Nekker", Forca: 1}, {Name: "Infantaria Leve", Forca: 2},
@@ -102,7 +99,6 @@ func (s *Server) initializeDistributedStock() {
 	})
 
 	// 4. Converte as cartas para JSON e as adiciona ao Redis como uma lista (LIFO - Rpush)
-	// Para simular a remoção de pacotes do topo da pilha, usaremos LPOP (Left Pop)
 	var cardJsons []interface{}
 	for _, card := range fullCardStock {
 		cardJson, _ := json.Marshal(card)
@@ -116,18 +112,16 @@ func (s *Server) initializeDistributedStock() {
 }
 
 // openCardPack distribuído: remove um pacote do estoque global (Redis) de forma ATÔMICA.
-// Item 4: Gerenciamento Distribuído de Estoque (Controle de Concorrência)
-// Esta função foi REESCRITA para usar o Script Lua, eliminando a necessidade de locks (SETNX).
 func (s *Server) openCardPackDistributed(playerName string) ([]Card, error) {
 	ctx := context.Background()
 	const packSize = 3 // Um pacote tem 3 cartas
 
-	// 1. Executa o script LUA atomicamente
+	// Executa o script LUA atomicamente
 	// KEYS[1] = stockKey
 	// ARGV[1] = packSize (3)
 	result, err := atomicOpenPackScript.Run(ctx, s.RedisClient, []string{stockKey}, packSize).Result()
 	if err != nil {
-		// Erro na execução do script (ex: conexão, sintaxe lua)
+		// Erro na execução do script
 		log.Printf("Servidor %s: Erro ao executar script LUA: %v", s.ServerID, err)
 		return nil, fmt.Errorf("erro interno ao processar o estoque: %w", err)
 	}
@@ -136,7 +130,6 @@ func (s *Server) openCardPackDistributed(playerName string) ([]Card, error) {
 	// O LUA retorna um []interface{} de strings (JSON)
 	cardInterfaces, ok := result.([]interface{})
 	if !ok {
-		// Isso não deve acontecer se o script estiver correto
 		log.Printf("Servidor %s: Resultado inesperado do script LUA: %T", s.ServerID, result)
 		return nil, fmt.Errorf("erro interno (resultado script)")
 	}
@@ -169,8 +162,6 @@ func (s *Server) openCardPackDistributed(playerName string) ([]Card, error) {
 }
 
 // openCardPack é a função que o servidor local chamará.
-// (Esta função permanece inalterada, pois a lógica de erro
-// agora trata "estoque insuficiente" em vez de "lock falhou")
 func (s *Server) openCardPack(player *PlayerState, isMandatory bool) {
 	if !isMandatory && player.PacksOpened >= 3 {
 		s.sendWebSocketMessage(player, "Você já abriu o máximo de 3 pacotes.")
@@ -183,10 +174,8 @@ func (s *Server) openCardPack(player *PlayerState, isMandatory bool) {
 		return
 	}
 
-	// Sucesso: Adiciona o pacote ao deck do jogador (estado local)
 	player.Deck = append(player.Deck, pack...)
 	player.PacksOpened++
-	// TODO: Atualizar estado do jogador no Redis (Item 5)
 
 	// Constrói e envia a resposta ao jogador
 	var response string
@@ -201,7 +190,7 @@ func (s *Server) openCardPack(player *PlayerState, isMandatory bool) {
 			response += ", "
 		}
 	}
-	// Consulta o estoque restante (sem lock, pois é apenas informativo)
+	// Consulta o estoque restante
 	remainingPacks, _ := s.RedisClient.LLen(context.Background(), stockKey).Result()
 	response += fmt.Sprintf(". Pacotes restantes no servidor: %d\n", remainingPacks/3)
 
@@ -209,7 +198,6 @@ func (s *Server) openCardPack(player *PlayerState, isMandatory bool) {
 }
 
 // viewDeck envia ao jogador uma lista de todas as cartas em seu deck.
-// (Esta função permanece inalterada)
 func (s *Server) viewDeck(player *PlayerState) {
 	if len(player.Deck) == 0 {
 		s.sendWebSocketMessage(player, "Seu deck está vazio.")

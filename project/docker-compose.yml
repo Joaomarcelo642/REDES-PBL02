@@ -51,7 +51,7 @@ services:
     depends_on:
       - server-1
       - server-2
-    # O comando agora aponta para o nome do serviço do servidor no Docker
+    # O comando aponta para o nome do serviço do servidor no Docker
     # O cliente deve ser configurado para se conectar a um dos servidores (server-1, porta 8080).
     command: ["tail", "-f", "/dev/null"] # Mantém o container rodando para testes manuais ou via script
     networks:

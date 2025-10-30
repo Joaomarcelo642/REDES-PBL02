@@ -17,8 +17,6 @@ const (
 	tradeLockKey  = "lock:trade"
 )
 
-// --- NOVA STRUCT ---
-// Precisamos saber QUEM enviou a carta, para notificá-lo de volta.
 type TradeTicket struct {
 	PlayerName string `json:"player_name"`
 	ServerID   string `json:"server_id"`
@@ -26,7 +24,6 @@ type TradeTicket struct {
 }
 
 // handleTradeCard é chamado pelo websocket.go
-// (Função inalterada - ela valida e chama performDistributedTrade)
 func (s *Server) handleTradeCard(player *PlayerState, command string) {
 	// 1. Validar o estado do jogador
 	player.mu.Lock()
@@ -67,12 +64,11 @@ func (s *Server) handleTradeCard(player *PlayerState, command string) {
 	s.performDistributedTrade(player, cardToTrade)
 }
 
-// --- FUNÇÃO REESCRITA ---
-// performDistributedTrade agora usa TradeTicket e Pub/Sub para notificar o remetente.
+// performDistributedTrade usa TradeTicket e Pub/Sub para notificar o remetente.
 func (s *Server) performDistributedTrade(player *PlayerState, cardToTrade Card) {
 	ctx := context.Background()
 
-	// 1. Tenta adquirir um lock distribuído (Lógica inalterada)
+	// 1. Tenta adquirir um lock distribuído
 	lockValue := fmt.Sprintf("%s-%d", s.ServerID, time.Now().UnixNano())
 	lockTimeout := 3 * time.Second
 
@@ -90,7 +86,7 @@ func (s *Server) performDistributedTrade(player *PlayerState, cardToTrade Card) 
 		return
 	}
 
-	// Garante a liberação do lock (Lógica inalterada)
+	// Garante a liberação do lock
 	defer func(val string) {
 		script := redis.NewScript(`
 			if redis.call("get", KEYS[1]) == ARGV[1] then
@@ -111,10 +107,9 @@ func (s *Server) performDistributedTrade(player *PlayerState, cardToTrade Card) 
 		ServerID:   s.ServerID,
 		Card:       cardToTrade,
 	}
-	// (Não serializamos ainda, podemos não precisar)
 
 	if err == redis.Nil {
-		// --- CASO 1: FILA VAZIA (JOGADOR A) ---
+		// CASO 1: FILA VAZIA (JOGADOR A)
 		// Serializa e adiciona o ticket do jogador A à fila (RPUSH)
 		ticketJSONToSend, _ := json.Marshal(ticketToSend)
 		s.RedisClient.RPush(ctx, tradeQueueKey, ticketJSONToSend)
@@ -132,7 +127,7 @@ func (s *Server) performDistributedTrade(player *PlayerState, cardToTrade Card) 
 		return
 	}
 
-	// --- CASO 2: SUCESSO! (JOGADOR B) ---
+	// CASO 2: SUCESSO! (JOGADOR B)
 	// Um ticket (do Jogador A) foi recebido.
 
 	// Desserializa o ticket recebido (do Jogador A)
@@ -156,10 +151,10 @@ func (s *Server) performDistributedTrade(player *PlayerState, cardToTrade Card) 
 	log.Printf("Troca local bem-sucedida para %s. Enviou %s, Recebeu %s.", player.Name, cardToTrade.Name, receivedCard.Name)
 	s.sendWebSocketMessage(player, fmt.Sprintf("Troca realizada! Você enviou '%s (Força: %d)' e recebeu '%s (Força: %d)'.", cardToTrade.Name, cardToTrade.Forca, receivedCard.Name, receivedCard.Forca))
 
-	// --- 5. ETAPA CRUCIAL (NOVA): Notificar Jogador A via Pub/Sub ---
+	// --- 5. Notificar Jogador A via Pub/Sub ---
 
 	// Prepara a mensagem para o Jogador A
-	// (Envia a carta do Jogador B, 'cardToTrade', para o Jogador A)
+	// Envia a carta do Jogador B, 'cardToTrade', para o Jogador A
 	cardB_JSON, _ := json.Marshal(cardToTrade)
 	messageForA := fmt.Sprintf("TRADE_COMPLETE|%s", string(cardB_JSON))
 	channelForA := fmt.Sprintf("player:%s", receivedPlayerName)
@@ -167,7 +162,7 @@ func (s *Server) performDistributedTrade(player *PlayerState, cardToTrade Card) 
 	// Publica a mensagem
 	if err := s.RedisClient.Publish(ctx, channelForA, messageForA).Err(); err != nil {
 		log.Printf("FALHA CRÍTICA AO PUBLICAR TROCA para %s: %v", receivedPlayerName, err)
-		// TODO: Lógica de compensação (ex: devolver a carta de A para a fila)
+		// Lógica de compensação (ex: devolver a carta de A para a fila)
 	} else {
 		log.Printf("Notificação de troca enviada para %s (%s) via Pub/Sub.", receivedPlayerName, receivedCard.Name)
 	}
