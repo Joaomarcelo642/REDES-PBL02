@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	// NOTA: A função startLocalGame (no final) precisa destes imports,
-	// certifique-se que eles estejam aqui.
 )
 
 const (
@@ -25,7 +23,7 @@ const (
 func (s *Server) addToMatchmakingQueue(player *PlayerState) {
 	ctx := context.Background()
 
-	// --- ATUALIZA ESTADO DO JOGADOR ---
+	// ATUALIZA ESTADO DO JOGADOR
 	player.mu.Lock()
 	player.State = "Searching"
 	player.mu.Unlock()
@@ -176,7 +174,6 @@ func (s *Server) distributedMatchmaker() {
 }
 
 // notifyMatchStart coordena o início da partida entre os servidores.
-// --- ESTA FUNÇÃO FOI CORRIGIDA ---
 func (s *Server) notifyMatchStart(p1Ticket, p2Ticket MatchmakingTicket) {
 	log.Printf("Iniciando notificação de partida para %s vs %s", p1Ticket.PlayerName, p2Ticket.PlayerName)
 
@@ -192,7 +189,6 @@ func (s *Server) notifyMatchStart(p1Ticket, p2Ticket MatchmakingTicket) {
 		err := s.callRemoteMatchNotification(p1Ticket.ServerID, req)
 		if err != nil {
 			log.Printf("FALHA AO NOTIFICAR P1 (%s) no servidor %s. Partida abortada. Erro: %v", p1Ticket.PlayerName, p1Ticket.ServerID, err)
-			// TODO: Devolver jogadores à fila
 			return
 		}
 	}
@@ -202,7 +198,6 @@ func (s *Server) notifyMatchStart(p1Ticket, p2Ticket MatchmakingTicket) {
 		err := s.callRemoteMatchNotification(p2Ticket.ServerID, req)
 		if err != nil {
 			log.Printf("FALHA AO NOTIFICAR P2 (%s) no servidor %s. Partida abortada. Erro: %v", p2Ticket.PlayerName, p2Ticket.ServerID, err)
-			// TODO: Devolver jogadores à fila
 			return
 		}
 	}
@@ -216,8 +211,6 @@ func (s *Server) notifyMatchStart(p1Ticket, p2Ticket MatchmakingTicket) {
 	}
 
 	if p2Ticket.ServerID == s.ServerID {
-		// --- BUG CORRIGIDO ---
-		// Chamamos com a ordem correta (P1, P2), não invertida.
 		s.startLocalGame(req.Player1Name, req.Player2Name, req.Server1ID, req.Server2ID)
 	}
 }
@@ -240,10 +233,9 @@ func (s *Server) callRemoteMatchNotification(remoteServerID string, req MatchNot
 		return fmt.Errorf("servidor remoto retornou status %d", resp.StatusCode)
 	}
 
-	return nil // Sucesso
+	return nil
 }
 
-// startLocalGame (VERSÃO DISTRIBUÍDA CORRIGIDA PARA LOCAL-VS-LOCAL)
 // Inicia a sessão de jogo. P1, P2 e seus IDs de servidor são fornecidos pelo matchmaker.
 func (s *Server) startLocalGame(player1Name, player2Name, server1ID, server2ID string) {
 	// 1. Pega o jogador local do mapa, identificando se é P1 ou P2
@@ -251,8 +243,7 @@ func (s *Server) startLocalGame(player1Name, player2Name, server1ID, server2ID s
 	var localPlayer *PlayerState
 	var isP1 bool
 
-	// --- LÓGICA CORRIGIDA ---
-	// Tentamos encontrar P1. Se ele estiver local E AINDA não estiver em jogo...
+	// Tenta encontrar P1. Se ele estiver local E AINDA não estiver em jogo
 	if p, ok := s.Players[player1Name]; ok {
 		p.mu.Lock()
 		if p.State != "InGame" { // Se P1 não estiver em jogo
@@ -273,11 +264,10 @@ func (s *Server) startLocalGame(player1Name, player2Name, server1ID, server2ID s
 			p.mu.Unlock()
 		}
 	}
-	// --- FIM DA LÓGICA CORRIGIDA ---
 
 	if localPlayer == nil {
 		s.PlayerMutex.Unlock()
-		// Se ambos já estão InGame (na segunda chamada local-vs-local), isso é normal.
+		// Se ambos já estão InGame
 		log.Printf("startLocalGame (P1: %s, P2: %s) chamado, mas o jogador local já está 'InGame' (ou não é local).", player1Name, player2Name)
 		return
 	}
@@ -344,7 +334,7 @@ func (s *Server) startLocalGame(player1Name, player2Name, server1ID, server2ID s
 	timerMsg := fmt.Sprintf("TIMER|%d", int(gameTurnTimeout.Seconds()))
 	s.sendWebSocketMessage(localPlayer, timerMsg)
 
-	// 7. --- O CÉREBRO DO JOGO ---
+	// 7. O CÉREBRO DO JOGO
 	// Apenas o servidor do P1 (o "master") escuta os eventos e o timeout.
 	if isP1 {
 		log.Printf("Servidor P1 (%s) iniciando listener para jogo %s.", s.ServerID, player1Name)

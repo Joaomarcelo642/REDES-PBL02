@@ -26,7 +26,7 @@ const (
 	gameTurnTimeout    = 10 * time.Second
 )
 
-// --- FUNÇÕES DE INICIALIZAÇÃO E ORQUESTRAÇÃO ---
+// FUNÇÕES DE INICIALIZAÇÃO E ORQUESTRAÇÃO
 
 func main() {
 	// 1. Obtém o ID do servidor da variável de ambiente
@@ -61,7 +61,7 @@ func main() {
 		Players:     make(map[string]*PlayerState),
 		PlayerMutex: &sync.Mutex{},
 		ServerID:    serverID,
-		// --- INICIALIZA NOVOS CAMPOS ---
+		// INICIALIZA NOVOS CAMPOS
 		ActiveGames: make(map[string]*GameSession),
 		GamesMutex:  sync.Mutex{},
 	}
@@ -95,12 +95,11 @@ func main() {
 
 	fmt.Println("Servidor iniciado. Pressione Ctrl+C para encerrar.")
 
-	// Bloco de encerramento gracioso
+	// Bloco de encerramento
 	quitChannel := make(chan os.Signal, 1)
 	signal.Notify(quitChannel, syscall.SIGINT, syscall.SIGTERM)
 	<-quitChannel
 	fmt.Println("\nEncerrando servidor...")
-	// TODO: Adicionar lógica de encerramento, como salvar estado no Redis, se necessário.
 }
 
 // setupRestRoutes configura as rotas para a comunicação Server-Server.
@@ -114,7 +113,6 @@ func (s *Server) setupRestRoutes() {
 }
 
 // handleTakeCardPack implementa o endpoint REST para que outros servidores solicitem um pacote de cartas.
-// Item 4: Gerenciamento Distribuído de Estoque (Controle de Concorrência)
 func (s *Server) handleTakeCardPack(w http.ResponseWriter, r *http.Request) {
 	var req TakePackRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -125,7 +123,7 @@ func (s *Server) handleTakeCardPack(w http.ResponseWriter, r *http.Request) {
 	// Tenta abrir o pacote de forma distribuída
 	pack, err := s.openCardPackDistributed(req.PlayerName)
 	if err != nil {
-		w.WriteHeader(http.StatusConflict) // 409 Conflict
+		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(TakePackResponse{
 			Success: false,
 			Message: err.Error(),
@@ -133,7 +131,6 @@ func (s *Server) handleTakeCardPack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sucesso
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(TakePackResponse{
 		Success: true,
@@ -144,7 +141,6 @@ func (s *Server) handleTakeCardPack(w http.ResponseWriter, r *http.Request) {
 
 // handleMatchNotification implementa o endpoint REST para que outros servidores notifiquem
 // este servidor sobre um pareamento de partida.
-// Item 6: Pareamento em Ambiente Distribuído
 // handleMatchNotification implementa o endpoint REST...
 func (s *Server) handleMatchNotification(w http.ResponseWriter, r *http.Request) {
 	var req MatchNotificationRequest
@@ -153,7 +149,6 @@ func (s *Server) handleMatchNotification(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// --- LÓGICA CORRIGIDA ---
 	// O matchmaker decide quem é P1 (Player1Name) e P2 (Player2Name).
 	// Ambos os servidores devem usar essa ordem.
 	isPlayerLocal := req.Server1ID == s.ServerID || req.Server2ID == s.ServerID
@@ -167,7 +162,6 @@ func (s *Server) handleMatchNotification(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Nenhum jogador local envolvido.", http.StatusConflict)
 		return
 	}
-	// --- FIM DA CORREÇÃO ---
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})

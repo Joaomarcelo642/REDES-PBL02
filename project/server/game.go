@@ -2,19 +2,17 @@ package main
 
 import (
 	"context"
-	"encoding/json" // Importa json
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
-	"strconv" // Importa strings
+	"strconv"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-// --- FUNÇÃO REESCRITA ---
-// handleGameMove agora apenas escreve a jogada no Redis e publica um evento.
-// Não chama mais determineWinner.
+// handleGameMove escreve a jogada no Redis e publica um evento.
 func (s *Server) handleGameMove(player *PlayerState, session *GameSession, command string) {
 	// 1. Valida o comando e seleciona a carta
 	choice, err := strconv.Atoi(command)
@@ -24,7 +22,6 @@ func (s *Server) handleGameMove(player *PlayerState, session *GameSession, comma
 	}
 
 	// 2. Identifica o jogador e o ID do jogo
-	// (Graças ao startLocalGame, Player1.Name sempre existe)
 	session.mu.Lock()
 	gameID := session.Player1.Name
 	isP1 := (player.Name == session.Player1.Name)
@@ -71,7 +68,6 @@ func (s *Server) handleGameMove(player *PlayerState, session *GameSession, comma
 	log.Printf("Jogador %s jogou %s. (Escrito no Redis)", player.Name, chosenCard.Name)
 }
 
-// --- NOVA FUNÇÃO "CÉREBRO" ---
 // listenForGameEvents é o "cérebro" da partida. Roda apenas no P1-Server.
 // Escuta eventos de jogada (via Pub/Sub) e o timeout.
 func (s *Server) listenForGameEvents(session *GameSession, gameID string) {
@@ -114,7 +110,7 @@ func (s *Server) listenForGameEvents(session *GameSession, gameID string) {
 					return                          // Encerra a goroutine
 				}
 			}
-			// Se só um jogou, continua esperando...
+			// Se só um jogou, continua esperando
 
 		case <-timeout.C:
 			// 4. TEMPO ESGOTADO
@@ -133,7 +129,6 @@ func (s *Server) listenForGameEvents(session *GameSession, gameID string) {
 	}
 }
 
-// --- NOVA FUNÇÃO AUXILIAR ---
 // fillSessionFromRedis preenche a sessão local (no P1-Server) com
 // as cartas lidas do Redis antes de chamar determineWinner.
 func (s *Server) fillSessionFromRedis(session *GameSession, p1CardJSON, p2CardJSON string) {
@@ -154,7 +149,6 @@ func (s *Server) fillSessionFromRedis(session *GameSession, p1CardJSON, p2CardJS
 	}
 }
 
-// --- FUNÇÃO MODIFICADA ---
 // determineWinner agora é chamado APENAS pelo P1-Server.
 // Ela envia o resultado do P1 localmente e do P2 via Redis Pub/Sub.
 func (s *Server) determineWinner(session *GameSession) {
@@ -171,7 +165,7 @@ func (s *Server) determineWinner(session *GameSession) {
 	p2Card := session.Player2Card
 	var resultP1, resultP2, logMessage string
 
-	// (Lógica original de comparação de cartas)
+	// Lógica de comparação de cartas
 	if p1Card != nil && p2Card != nil {
 		if p1Card.Forca > p2Card.Forca {
 			resultP1 = fmt.Sprintf("RESULT|VITÓRIA|Sua carta %s (%d) venceu %s (%d) de %s.\n", p1Card.Name, p1Card.Forca, p2Card.Name, p2Card.Forca, session.Player2.Name)
@@ -202,7 +196,6 @@ func (s *Server) determineWinner(session *GameSession) {
 
 	log.Printf("Partida entre %s e %s finalizada. %s", session.Player1.Name, session.Player2.Name, logMessage)
 
-	// --- LÓGICA DE ENVIO MODIFICADA ---
 	// Envia para P1 (jogador local) via WebSocket
 	if session.Player1 != nil && session.Player1.WsConn != nil {
 		if resultP1 != "" {
@@ -220,7 +213,6 @@ func (s *Server) determineWinner(session *GameSession) {
 		}
 	}
 
-	// --- LIMPEZA DE ESTADO ---
 	// Reseta o estado do P1 (local)
 	if session.Player1 != nil {
 		session.Player1.mu.Lock()
@@ -245,16 +237,12 @@ func selectRandomCards(deck []Card, count int) []Card {
 	}
 	rand.Seed(time.Now().UnixNano())
 
-	// --- CORREÇÃO AQUI ---
-	// Deve ser make([]Card, len(deck)) e não []byte
 	deckCopy := make([]Card, len(deck))
-	copy(deckCopy, deck) // Agora os tipos são compatíveis ([]Card, []Card)
-	// --- FIM DA CORREÇÃO ---
+	copy(deckCopy, deck)
 
 	rand.Shuffle(len(deckCopy), func(i, j int) {
 		deckCopy[i], deckCopy[j] = deckCopy[j], deckCopy[i]
 	})
 
-	// Agora o tipo de retorno é o correto ([]Card)
 	return deckCopy[:count]
 }

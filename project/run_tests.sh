@@ -27,12 +27,10 @@ fi
 # Compila o bot de teste no container de bots.
 # Usa sh -c e caminho relativo (./test_concurrency.go) dentro do container para
 # evitar que o Go interprete caminhos do Windows (ex: C:/...) como import paths.
-# CORREÇÃO: Adicionado // para evitar conversão de caminho do MINGW
 docker-compose -f docker-compose.yml exec bots sh -c "cd /app && go build -o //test_concurrency ./test_concurrency.go"
 
 echo "Executando o teste de concorrência com 10 bots simultâneos..."
 # Executa o teste de concorrência dentro do container
-# CORREÇÃO: Adicionado // para evitar conversão de caminho do MINGW
 docker-compose -f docker-compose.yml exec bots sh -c "//test_concurrency"
 
 echo "--- 4. TESTE DE TOLERÂNCIA A FALHAS (Item 7) ---"
@@ -44,7 +42,6 @@ sleep 5
 
 echo "Iniciando 10 novos bots para testar se o sistema continua funcional..."
 # Executa 10 bots no server-1 (o único que sobrou)
-# CORREÇÃO: Adicionado // para evitar conversão de caminho do MINGW
 docker-compose -f docker-compose.yml exec bots //client -bot -count=10 -prefix=FailTest server-1
 
 echo "--- 5. LIMPEZA ---"

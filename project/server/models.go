@@ -10,8 +10,8 @@ import (
 
 // Card representa uma única carta do jogo, com nome e força.
 type Card struct {
-	Name  string `json:"name"`  // <-- ADICIONAR TAG
-	Forca int    `json:"forca"` // <-- ADICIONAR TAG
+	Name  string `json:"name"`
+	Forca int    `json:"forca"`
 }
 
 // PlayerState (inalterado)
@@ -32,16 +32,14 @@ type GameSession struct {
 	Player1 *PlayerState // Pode ser local ou "fantasma"
 	Player2 *PlayerState // Pode ser local ou "fantasma"
 
-	// --- ESTES CAMPOS SÓ SERÃO PREENCHIDOS NO P1-SERVER, ANTES DE CHAMAR determineWinner ---
+	// ESTES CAMPOS SÓ SERÃO PREENCHIDOS NO P1-SERVER, ANTES DE CHAMAR determineWinner
 	Player1Card *Card
 	Player2Card *Card
-	// ---------------------------------------------------------------------------------
 
 	mu          sync.Mutex
 	Player1Hand [2]Card // Mão do P1 (só existe no P1-Server)
 	Player2Hand [2]Card // Mão do P2 (só existe no P2-Server)
 
-	// --- NOVOS CAMPOS ---
 	Server1ID string // ID do servidor do P1
 	Server2ID string // ID do servidor do P2
 }

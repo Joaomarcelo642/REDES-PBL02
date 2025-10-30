@@ -2,17 +2,17 @@ package main
 
 import (
 	"context"
-	"encoding/json" // <-- Importar JSON
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strings"
-	"sync" // Importa o sync
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
 
-// upgrader (inalterado)
+// upgrader 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -21,7 +21,7 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// handleWebSocketConnection (inalterado)
+// handleWebSocketConnection
 func (s *Server) handleWebSocketConnection(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -64,7 +64,7 @@ func (s *Server) handleWebSocketConnection(w http.ResponseWriter, r *http.Reques
 	s.listenClientCommands(player)
 }
 
-// listenClientCommands (inalterado)
+// listenClientCommands
 func (s *Server) listenClientCommands(player *PlayerState) {
 	defer func() {
 		s.PlayerMutex.Lock()
@@ -107,7 +107,7 @@ func (s *Server) listenClientCommands(player *PlayerState) {
 	}
 }
 
-// sendWebSocketMessage (inalterado)
+// sendWebSocketMessage
 func (s *Server) sendWebSocketMessage(player *PlayerState, message string) {
 	err := player.WsConn.WriteMessage(websocket.TextMessage, []byte(message))
 	if err != nil {
@@ -116,8 +116,7 @@ func (s *Server) sendWebSocketMessage(player *PlayerState, message string) {
 	}
 }
 
-// --- FUNÇÃO MODIFICADA ---
-// listenRedisPubSub agora trata 'RESULT|' e 'TRADE_COMPLETE|'
+// listenRedisPubSub
 func (s *Server) listenRedisPubSub(player *PlayerState) {
 	ctx := context.Background()
 	pubsub := s.RedisClient.Subscribe(ctx, fmt.Sprintf("player:%s", player.Name))
@@ -132,10 +131,10 @@ func (s *Server) listenRedisPubSub(player *PlayerState) {
 
 		log.Printf("Mensagem Pub/Sub recebida para %s: %s", player.Name, msg.Payload)
 
-		// --- LÓGICA DE ROTEAMENTO DE MENSAGEM ---
+		// LÓGICA DE ROTEAMENTO DE MENSAGEM 
 
 		if strings.HasPrefix(msg.Payload, "RESULT|") {
-			// --- LIMPEZA DE ESTADO PÓS-JOGO ---
+			// LIMPEZA DE ESTADO PÓS-JOGO 
 			log.Printf("Limpando estado de jogo para %s após resultado (via Pub/Sub).", player.Name)
 
 			player.mu.Lock()
@@ -153,11 +152,11 @@ func (s *Server) listenRedisPubSub(player *PlayerState) {
 			}
 			player.mu.Unlock()
 
-			// Envia a mensagem de resultado (ex: "RESULT|VITÓRIA...")
+			// Envia a mensagem de resultado
 			s.sendWebSocketMessage(player, msg.Payload)
 
 		} else if strings.HasPrefix(msg.Payload, "TRADE_COMPLETE|") {
-			// --- (NOVO) PROCESSAMENTO DE TROCA CONCLUÍDA ---
+			// PROCESSAMENTO DE TROCA CONCLUÍDA 
 			log.Printf("Recebida notificação de troca completa para %s.", player.Name)
 
 			cardJSON := strings.TrimPrefix(msg.Payload, "TRADE_COMPLETE|")
@@ -178,8 +177,8 @@ func (s *Server) listenRedisPubSub(player *PlayerState) {
 			s.sendWebSocketMessage(player, notificationMsg)
 
 		} else {
-			// --- MENSAGEM PADRÃO ---
-			// Encaminha qualquer outra mensagem (se houver)
+			//  MENSAGEM PADRÃO
+			// Encaminha qualquer outra mensagem
 			s.sendWebSocketMessage(player, msg.Payload)
 		}
 	}
